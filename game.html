@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Мини-игра Mortal Kombat — сразись с ботом: Sub-Zero против Scorpion. Простой файтинг с полосками здоровья и комбо."
+    />
+    <link rel="icon" type="image/png" href="images/logo.png" />
+    <link rel="stylesheet" href="css/style.css" />
+    <title>Мини-игра — Mortal Kombat</title>
+  </head>
+  <body>
+    <header>
+      <a class="logo" href="index.html">
+        <img src="images/logo.png" alt="Логотип Mortal Kombat" />
+        <h1 class="title">Mortal Kombat</h1>
+      </a>
+      <nav>
+        <a href="index.html">Главная</a>
+        <a href="about.html">О игре</a>
+        <a href="index.html#characters">Персонажи</a>
+        <a class="nav-game" href="game.html">🎮 Мини-игра</a>
+      </nav>
+    </header>
+    <main class="game-main">
+      <div class="game-panel">
+        <h1 class="title">Mortal Kombat Mini</h1>
+        <p class="game-status" id="gameStatus">FIGHT!</p>
+        <div class="game-stage">
+          <canvas id="mkCanvas" width="800" height="400">
+            Ваш браузер не поддерживает canvas.
+          </canvas>
+        </div>
+        <div class="game-controls">
+          <p>
+            <b>Sub-Zero (игрок):</b> A/D — движение · W — прыжок · F — удар рукой ·
+            G — удар ногой
+          </p>
+          <button id="restartBtn" type="button">Играть снова</button>
+        </div>
+      </div>
+    </main>
+    <footer>
+      <p>© 2026 Mortal Kombat Fan Site</p>
+    </footer>
+
+    <script>
+      (function () {
+        const canvas = document.getElementById("mkCanvas");
+        const ctx = canvas.getContext("2d");
+        const statusEl = document.getElementById("gameStatus");
+        const restartBtn = document.getElementById("restartBtn");
+
+        const W = canvas.width;
+        const H = canvas.height;
+        const GROUND = 340;
+        const GRAVITY = 780;
+
+        let keys = {};
+        let particles = [];
+        let gameState = "start"; // start | fighting | ko
+        let stateTimer = 0;
+
+        document.addEventListener("keydown", (e) => {
+          if (e.code === "KeyW" || e.code === "KeyA" || e.code === "KeyD") {
+            e.preventDefault();
+          }
+          keys[e.code] = true;
+        });
+        document.addEventListener("keyup", (e) => {
+          keys[e.code] = false;
+        });
+
+        function makeFighter(x, name, color, dark) {
+          return {
+            x: x,
+            y: GROUND,
+            vy: 0,
+            facing: 1, // 1 = вправо, -1 = влево
+            w: 42,
+            h: 92,
+            hp: 100,
+            jump: false,
+            attackTimer: 0,
+            attackDmg: 0,
+            cooldown: 0,
+            hitTimer: 0,
+            aiTimer: 1.2,
+            name: name,
+            color: color,
+            dark: dark,
+            wins: 0,
+          };
+        }
+
+        function resetFight() {
+          p1 = makeFighter(180, "Sub-Zero", "#3fa9ff", false);
+          p2 = makeFighter(620, "Scorpion", "#ffcc33", true);
+          particles = [];
+          gameState = "fighting";
+          statusEl.textContent = "FIGHT!";
+        }
+
+        let p1 = makeFighter(180, "Sub-Zero", "#3fa9ff", false);
+        let p2 = makeFighter(620, "Scorpion", "#ffcc33", true);
+
+        function clamp(v, min, max) {
+          return Math.max(min, Math.min(max, v));
+        }
+
+        function canAct(f) {
+          return (
+            gameState === "fighting" &&
+            f.hp > 0 &&
+            f.attackTimer <= 0 &&
+            f.cooldown <= 0
+          );
+        }
+
+        function doAttack(attacker, defender, dmg) {
+          attacker.attackTimer = 0.26;
+          attacker.cooldown = 0.34;
+          const dx = defender.x - attacker.x;
+          const range = 96;
+          if (Math.abs(dx) < range && Math.sign(dx) === attacker.facing) {
+            defender.hp = Math.max(0, defender.hp - dmg);
+            defender.hitTimer = 0.16;
+            defender.x += attacker.facing * 20;
+            defender.x = clamp(defender.x, 60, W - 60);
+            spawnHit(attacker.x + attacker.facing * 40, attacker.y - 70);
+            if (defender.hp <= 0) {
+              endRound(attacker);
+            }
+          }
+        }
+
+        function endRound(winner) {
+          gameState = "ko";
+          winner.wins++;
+          statusEl.textContent =
+            winner.name + " ПОБЕЖДАЕТ!" +
+            " (Счёт: " + p1.wins + ":" + p2.wins + ")";
+        }
+
+        function spawnHit(x, y) {
+          for (let i = 0; i < 10; i++) {
+            particles.push({
+              x: x,
+              y: y,
+              vx: (Math.random() - 0.5) * 240,
+              vy: -Math.random() * 220 - 40,
+              life: 0.45 + Math.random() * 0.25,
+              size: 2 + Math.random() * 4,
+            });
+          }
+        }
+
+        function update(dt) {
+          if (gameState === "start") {
+            stateTimer += dt;
+            if (stateTimer > 1.2) {
+              gameState = "fighting";
+              statusEl.textContent = "FIGHT!";
+            }
+          }
+
+          if (gameState !== "fighting") {
+            return;
+          }
+
+          // --- Игрок (Sub-Zero) ---
+          if (keys["KeyA"]) p1.x -= 200 * dt;
+          if (keys["KeyD"]) p1.x += 200 * dt;
+          if (keys["KeyW"] && !p1.jump) {
+            p1.vy = -430;
+            p1.jump = true;
+          }
+          if (keys["KeyF"] && canAct(p1)) doAttack(p1, p2, 6);
+          if (keys["KeyG"] && canAct(p1)) doAttack(p1, p2, 11);
+
+          // --- Бот (Scorpion) ---
+          p2.aiTimer -= dt;
+          const dx = p1.x - p2.x;
+          const dist = Math.abs(dx);
+          p2.facing = Math.sign(dx) || 1;
+          if (p2.aiTimer <= 0) {
+            const r = Math.random();
+            if (dist > 130) {
+              p2.x += Math.sign(dx) * 170 * (r < 0.6 ? 1 : 0.4);
+            } else if (canAct(p2)) {
+              if (r < 0.45) doAttack(p2, p1, 6);
+              else if (r < 0.7) doAttack(p2, p1, 11);
+              else if (!p2.jump) {
+                p2.vy = -430;
+                p2.jump = true;
+              }
+            }
+            p2.aiTimer = 0.45 + Math.random() * 0.8;
+          }
+
+          // --- Физика крутых парней ---
+          p1.facing = p2.x >= p1.x ? 1 : -1;
+          [p1, p2].forEach((f) => {
+            f.vy += GRAVITY * dt;
+            f.y += f.vy * dt;
+            if (f.y >= GROUND) {
+              f.y = GROUND;
+              f.vy = 0;
+              f.jump = false;
+            }
+            f.x = clamp(f.x, 52, W - 52);
+            f.attackTimer = Math.max(0, f.attackTimer - dt);
+            f.cooldown = Math.max(0, f.cooldown - dt);
+            f.hitTimer = Math.max(0, f.hitTimer - dt);
+          });
+
+          // Расталкивание бойцов
+          if (Math.abs(p1.x - p2.x) < 52) {
+            const push = (52 - Math.abs(p1.x - p2.x)) / 2 + 1;
+            if (p1.x < p2.x) {
+              p1.x -= push;
+              p2.x += push;
+            } else {
+              p1.x += push;
+              p2.x -= push;
+            }
+          }
+
+          // Частицы ударов
+          particles.forEach((p) => {
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.vy += 500 * dt;
+            p.life -= dt;
+          });
+          particles = particles.filter((p) => p.life > 0);
+        }
+
+        function drawHealthBar(x, y, w, h, hp, name, fill, align) {
+          ctx.save();
+          ctx.fillStyle = "rgba(0,0,0,0.55)";
+          ctx.strokeStyle = "#fff";
+          ctx.lineWidth = 2;
+          ctx.fillRect(x, y, w, h);
+          ctx.strokeRect(x, y, w, h);
+          const bw = (w - 6) * (hp / 100);
+          ctx.fillStyle = fill;
+          if (align === "left") ctx.fillRect(x + 3, y + 3, bw, h - 6);
+          else ctx.fillRect(x + w - 3 - bw, y + 3, bw, h - 6);
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 15px 'Ruslan Display', sans-serif";
+          ctx.textAlign = align === "left" ? "left" : "right";
+          ctx.fillText(name, x, y - 6);
+          ctx.restore();
+        }
+
+        function drawFighter(f) {
+          ctx.save();
+          ctx.translate(f.x, f.y);
+
+          const flash = f.hitTimer > 0;
+          const body = flash ? "#ffffff" : f.color;
+          const shade = flash ? "#ffffff" : (f.dark ? "#c79000" : "#1f76c9");
+
+          // Ноги
+          ctx.fillStyle = shade;
+          ctx.fillRect(-14, -30, 10, 30);
+          ctx.fillRect(4, -30, 10, 30);
+
+          // Корпус
+          ctx.fillStyle = body;
+          ctx.fillRect(-15, -70, 30, 42);
+          // Пояс
+          ctx.fillStyle = shade;
+          ctx.fillRect(-15, -34, 30, 6);
+
+          // Голова
+          ctx.fillStyle = body;
+          ctx.beginPath();
+          ctx.arc(0, -82, 12, 0, Math.PI * 2);
+          ctx.fill();
+          // Повязка воина
+          ctx.fillStyle = shade;
+          ctx.fillRect(-12, -88, 24, 5);
+
+          // РУКИ
+          ctx.fillStyle = body;
+          const reach = f.attackTimer > 0 ? 34 : 0;
+          // дальняя рука
+          ctx.fillRect(-26, -68, 10, 26);
+          // бьющая рука (в направлении взгляда)
+          if (f.facing > 0) {
+            ctx.fillRect(15, -68, 10 + reach, 11);
+          } else {
+            ctx.fillRect(-25 - reach, -68, 10 + reach, 11);
+          }
+
+          ctx.restore();
+        }
+
+        function draw() {
+          // Фон арены
+          const grad = ctx.createLinearGradient(0, 0, 0, H);
+          grad.addColorStop(0, "#1a1030");
+          grad.addColorStop(1, "#2c1a3d");
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H);
+
+          // Пол
+          ctx.fillStyle = "#3a2b20";
+          ctx.fillRect(0, GROUND, W, H - GROUND);
+          ctx.strokeStyle = "rgba(255,255,255,0.25)";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(0, GROUND);
+          ctx.lineTo(W, GROUND);
+          ctx.stroke();
+
+          // Логотип на арене
+          ctx.save();
+          ctx.fillStyle = "rgba(255,255,255,0.12)";
+          ctx.font = "42px 'Ruslan Display', sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("MORTAL KOMBAT", W / 2, 210);
+          ctx.restore();
+
+          // Полоски здоровья
+          drawHealthBar(30, 30, 330, 20, p1.hp, "Sub-Zero", "#3fa9ff", "left");
+          drawHealthBar(440, 30, 330, 20, p2.hp, "Scorpion", "#e8b22a", "right");
+
+          // Бойцы
+          drawFighter(p1);
+          drawFighter(p2);
+
+          // Частицы
+          particles.forEach((p) => {
+            ctx.globalAlpha = Math.max(0, p.life / 0.6);
+            ctx.fillStyle = "#ffd75e";
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+          });
+          ctx.globalAlpha = 1;
+
+          // Табличка FATALITY при нокауте
+          if (gameState === "ko") {
+            ctx.save();
+            ctx.fillStyle = "rgba(0,0,0,0.35)";
+            ctx.fillRect(0, 140, W, 50);
+            ctx.fillStyle = "#ff3b3b";
+            ctx.font = "30px 'Ruslan Display', sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("FATALITY!", W / 2, 176);
+            ctx.restore();
+          }
+        }
+
+        let last = performance.now();
+        function loop(now) {
+          const dt = Math.min((now - last) / 1000, 0.05);
+          last = now;
+          update(dt);
+          draw();
+          requestAnimationFrame(loop);
+        }
+
+        restartBtn.addEventListener("click", resetFight);
+        resetFight();
+        requestAnimationFrame(loop);
+      })();
+    </script>
+  </body>
+</html>
